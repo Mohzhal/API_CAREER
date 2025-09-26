@@ -145,9 +145,6 @@ exports.getJobById = async (req, res) => {
   }
 };
 
-/* =========================
-   POST: create job
-   ========================= */
 exports.createJob = async (req, res) => {
   try {
     const payload = mapJobPayloadToDb(req.body);
@@ -157,7 +154,7 @@ exports.createJob = async (req, res) => {
     if (!jobTitle) {
       return res.status(400).json({
         success: false,
-        message: 'Field job_title (atau title) wajib diisi',
+        message: "Field job_title (atau title) wajib diisi",
       });
     }
     payload.title = jobTitle;
@@ -179,7 +176,17 @@ exports.createJob = async (req, res) => {
     payload.work_type = work_type;
     payload.work_time = work_time;
 
-    const [result] = await db.query('INSERT INTO job_posts SET ?', [payload]);
+    // ✅ Tambahkan hr_id
+    const hrId = req.user?.id || req.body.hr_id; // tergantung kamu ambil dari login / body
+    if (!hrId) {
+      return res.status(400).json({
+        success: false,
+        message: "HR ID wajib diisi",
+      });
+    }
+    payload.hr_id = hrId;
+
+    const [result] = await db.query("INSERT INTO job_posts SET ?", [payload]);
 
     return res.status(201).json({
       success: true,
@@ -189,10 +196,11 @@ exports.createJob = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Create job error:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    console.error("Create job error:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 
 /* =========================
    PUT: update job
