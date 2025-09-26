@@ -62,6 +62,11 @@ const mapJobPayloadToDb = (p = {}) => {
   if (p.salary_min !== undefined) out.salary_min = p.salary_min;
   if (p.salary_max !== undefined) out.salary_max = p.salary_max;
 
+  // FE kirim qualifications -> simpan ke kolom DB: requirements  
+  if (p.qualifications !== undefined || p.requirements !== undefined) {
+    out.requirements = p.qualifications ?? p.requirements;
+  }
+
   // biarkan work_type & work_time ditangani di create/update (wajib & normalisasi)
   return out;
 };
@@ -82,6 +87,8 @@ const mapDbRowToApi = (r = {}) => ({
   // ⬇️ tambahkan 2 field baru agar FE dapat nilainya
   work_type: r.work_type ?? null,
   work_time: r.work_time ?? null,
+// TAMBAHKAN di return object
+  qualifications: r.requirements ?? null, // Map requirements DB -> qualifications API
 
   total_applicants: r.total_applicants ?? 0,
 });
@@ -121,7 +128,6 @@ exports.getAllJobs = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
-
 
 /* =========================
    GET: ringkasan job
@@ -203,6 +209,20 @@ exports.createJob = async (req, res) => {
     payload.work_type = work_type;
     payload.work_time = work_time;
 
+    // TAMBAHKAN setelah set payload.work_time
+// Buat salary_range dari salary_min & salary_max
+if (req.body.salary_min || req.body.salary_max) {
+  let salary_range = "";
+  if (req.body.salary_min && req.body.salary_max) {
+    salary_range = `${req.body.salary_min} - ${req.body.salary_max}`;
+  } else if (req.body.salary_min) {
+    salary_range = `Min: ${req.body.salary_min}`;
+  } else if (req.body.salary_max) {
+    salary_range = `Max: ${req.body.salary_max}`;
+  }
+  payload.salary_range = salary_range;
+}
+
     // ✅ Tambahkan hr_id
     const hrId = req.user?.id || req.body.hr_id; // tergantung kamu ambil dari login / body
     if (!hrId) {
@@ -226,6 +246,9 @@ exports.createJob = async (req, res) => {
     console.error("Create job error:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
+  console.log("📥 Request body:", req.body);
+console.log("🗃️ Mapped payload:", payload);
+console.log("💾 Final payload before insert:", payload);
 };
 
 /* =========================
