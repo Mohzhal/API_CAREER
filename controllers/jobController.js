@@ -3,31 +3,34 @@ const { db } = require("../config/database");
 
 //UPDATE BARU
 // === Helper normalisasi & daftar nilai yang diizinkan ===
-const ALLOWED_WORK_TYPES = new Set(['on_site','remote','hybrid','field']); // field = Field Work/Mobile
-const ALLOWED_WORK_TIMES = new Set(['full_time','part_time','freelance','internship','contract','volunteer','seasonal']);
+const ALLOWED_WORK_TYPES = new Set(["on_site", "remote", "hybrid", "field"]); // field = Field Work/Mobile
+const ALLOWED_WORK_TIMES = new Set(["full_time", "part_time", "freelance", "internship", "contract", "volunteer", "seasonal"]);
 
-const _norm = (v) => String(v || '').trim().toLowerCase();
+const _norm = (v) =>
+  String(v || "")
+    .trim()
+    .toLowerCase();
 
 // Terima variasi input dari FE (WFO/On-site/Remote/WFH/Hybrid/Field/Mobile)
 const normalizeWorkType = (val) => {
   const x = _norm(val);
-  if (['on_site','onsite','on-site','wfo','office'].includes(x)) return 'on_site';
-  if (['remote','wfh'].includes(x)) return 'remote';
-  if (['hybrid'].includes(x)) return 'hybrid';
-  if (['field','field_work','fieldwork','mobile','lapangan'].includes(x)) return 'field';
+  if (["on_site", "onsite", "on-site", "wfo", "office"].includes(x)) return "on_site";
+  if (["remote", "wfh"].includes(x)) return "remote";
+  if (["hybrid"].includes(x)) return "hybrid";
+  if (["field", "field_work", "fieldwork", "mobile", "lapangan"].includes(x)) return "field";
   return null;
 };
 
 // Terima variasi Full-time/Part-time/Freelance/Internship/Contract/Volunteer/Seasonal
 const normalizeWorkTime = (val) => {
   const x = _norm(val);
-  if (['full_time','fulltime','full-time'].includes(x)) return 'full_time';
-  if (['part_time','parttime','part-time'].includes(x)) return 'part_time';
-  if (['freelance','contractor'].includes(x)) return 'freelance';
-  if (['internship','magang'].includes(x)) return 'internship';
-  if (['contract','kontrak'].includes(x)) return 'contract';
-  if (['volunteer','relawan'].includes(x)) return 'volunteer';
-  if (['seasonal'].includes(x)) return 'seasonal';
+  if (["full_time", "fulltime", "full-time"].includes(x)) return "full_time";
+  if (["part_time", "parttime", "part-time"].includes(x)) return "part_time";
+  if (["freelance", "contractor"].includes(x)) return "freelance";
+  if (["internship", "magang"].includes(x)) return "internship";
+  if (["contract", "kontrak"].includes(x)) return "contract";
+  if (["volunteer", "relawan"].includes(x)) return "volunteer";
+  if (["seasonal"].includes(x)) return "seasonal";
   return null;
 };
 
@@ -79,22 +82,46 @@ const mapDbRowToApi = (r = {}) => ({
   // ⬇️ tambahkan 2 field baru agar FE dapat nilainya
   work_type: r.work_type ?? null,
   work_time: r.work_time ?? null,
-});
 
-/* =========================
-   GET: semua job
-   ========================= */
+  total_applicants: r.total_applicants ?? 0,
+});
 exports.getAllJobs = async (req, res) => {
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM job_posts ORDER BY created_at DESC"
-    );
-    res.json({ success: true, data: rows.map(mapDbRowToApi) });
+    const { hrId } = req.query;
+
+    let sql = `
+      SELECT 
+        jp.*, 
+        COUNT(a.id) AS total_applicants
+      FROM job_posts jp
+      LEFT JOIN applications a ON a.job_id = jp.id
+      WHERE 1=1
+    `;
+    const values = [];
+
+    if (hrId) {
+      // Dashboard HR → tampilkan semua job yang dibuat HR itu
+      sql += " AND jp.hr_id = ?";
+      values.push(hrId);
+    } else {
+      // Untuk pelamar → hanya tampilkan lowongan aktif dan sudah diverifikasi
+      sql += " AND jp.is_active = 1 AND jp.verification_status = 'verified'";
+    }
+
+    sql += " GROUP BY jp.id ORDER BY jp.created_at DESC";
+
+    const [rows] = await db.query(sql, values);
+
+    res.json({
+      success: true,
+      data: rows.map(mapDbRowToApi),
+    });
   } catch (err) {
     console.error("Database query error:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 
 /* =========================
    GET: ringkasan job
@@ -201,7 +228,6 @@ exports.createJob = async (req, res) => {
   }
 };
 
-
 /* =========================
    PUT: update job
    ========================= */
@@ -214,22 +240,10 @@ exports.updateJob = async (req, res) => {
        FROM INFORMATION_SCHEMA.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'job_posts'`
     );
-    const existingCols = new Set(cols.map(r => r.c));
+    const existingCols = new Set(cols.map((r) => r.c));
 
     // gunakan nama kolom DB yang sebenarnya
-    const allowList = [
-      'title',
-      'description',
-      'is_active',
-      'verification_status',
-      'company_id',
-      'category_id',
-      'location',
-      'salary_min',
-      'salary_max',
-      'work_type',
-      'work_time'
-    ];
+    const allowList = ["title", "description", "is_active", "verification_status", "company_id", "category_id", "location", "salary_min", "salary_max", "work_type", "work_time"];
 
     // Terima alias dari FE dan normalisasi
     const raw = { ...req.body };
@@ -270,15 +284,15 @@ exports.updateJob = async (req, res) => {
     if (Object.keys(payload).length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Tidak ada field yang valid untuk diupdate',
+        message: "Tidak ada field yang valid untuk diupdate",
       });
     }
 
-    await db.query('UPDATE job_posts SET ? WHERE id = ?', [payload, id]);
-    return res.json({ success: true, message: 'Job updated', id });
+    await db.query("UPDATE job_posts SET ? WHERE id = ?", [payload, id]);
+    return res.json({ success: true, message: "Job updated", id });
   } catch (err) {
-    console.error('Update job error:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    console.error("Update job error:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 /* =========================
@@ -305,9 +319,7 @@ exports.verifyJob = async (req, res) => {
     const adminId = req.user?.id || null;
 
     if (!["verified", "rejected"].includes(status)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid status" });
+      return res.status(400).json({ success: false, message: "Invalid status" });
     }
 
     await db.query(
@@ -320,12 +332,7 @@ exports.verifyJob = async (req, res) => {
     await db.query(
       `INSERT INTO admin_activity_logs (admin_id, action, target_type, target_id, note)
        VALUES (?, ?, 'job_post', ?, ?)`,
-      [
-        adminId,
-        status === "verified" ? "verify_job" : "reject_job",
-        id,
-        reason || null,
-      ]
+      [adminId, status === "verified" ? "verify_job" : "reject_job", id, reason || null]
     );
 
     res.json({ success: true, message: `Job ${status} successfully`, id });
