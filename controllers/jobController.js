@@ -62,7 +62,7 @@ const mapJobPayloadToDb = (p = {}) => {
   if (p.salary_min !== undefined) out.salary_min = p.salary_min;
   if (p.salary_max !== undefined) out.salary_max = p.salary_max;
 
-  // FE kirim qualifications -> simpan ke kolom DB: requirements  
+  // FE kirim qualifications -> simpan ke kolom DB: requirements
   if (p.qualifications !== undefined || p.requirements !== undefined) {
     out.requirements = p.qualifications ?? p.requirements;
   }
@@ -84,10 +84,11 @@ const mapDbRowToApi = (r = {}) => ({
   location: r.location ?? null,
   salary_min: r.salary_min ?? null,
   salary_max: r.salary_max ?? null,
+  //  salary_range: salary_range, // TAMBAHKAN INI
   // ⬇️ tambahkan 2 field baru agar FE dapat nilainya
   work_type: r.work_type ?? null,
   work_time: r.work_time ?? null,
-// TAMBAHKAN di return object
+  // TAMBAHKAN di return object
   qualifications: r.requirements ?? null, // Map requirements DB -> qualifications API
 
   total_applicants: r.total_applicants ?? 0,
@@ -180,8 +181,9 @@ exports.getJobById = async (req, res) => {
 
 exports.createJob = async (req, res) => {
   try {
+    console.log("📥 Request body:", req.body); // PINDAHKAN KE SINI
     const payload = mapJobPayloadToDb(req.body);
-
+    console.log("🗃️ Mapped payload:", payload); // TAMBAHKAN DI SINI
     // Ambil judul dari payload atau body; simpan ke kolom DB: title
     const jobTitle = payload.title ?? req.body.job_title ?? req.body.title;
     if (!jobTitle) {
@@ -210,18 +212,18 @@ exports.createJob = async (req, res) => {
     payload.work_time = work_time;
 
     // TAMBAHKAN setelah set payload.work_time
-// Buat salary_range dari salary_min & salary_max
-if (req.body.salary_min || req.body.salary_max) {
-  let salary_range = "";
-  if (req.body.salary_min && req.body.salary_max) {
-    salary_range = `${req.body.salary_min} - ${req.body.salary_max}`;
-  } else if (req.body.salary_min) {
-    salary_range = `Min: ${req.body.salary_min}`;
-  } else if (req.body.salary_max) {
-    salary_range = `Max: ${req.body.salary_max}`;
-  }
-  payload.salary_range = salary_range;
-}
+    // Buat salary_range dari salary_min & salary_max
+    if (req.body.salary_min || req.body.salary_max) {
+      let salary_range = "";
+      if (req.body.salary_min && req.body.salary_max) {
+        salary_range = `${req.body.salary_min} - ${req.body.salary_max}`;
+      } else if (req.body.salary_min) {
+        salary_range = `Min: ${req.body.salary_min}`;
+      } else if (req.body.salary_max) {
+        salary_range = `Max: ${req.body.salary_max}`;
+      }
+      payload.salary_range = salary_range;
+    }
 
     // ✅ Tambahkan hr_id
     const hrId = req.user?.id || req.body.hr_id; // tergantung kamu ambil dari login / body
@@ -232,7 +234,7 @@ if (req.body.salary_min || req.body.salary_max) {
       });
     }
     payload.hr_id = hrId;
-
+    console.log("💾 Final payload before insert:", payload); // SEBELUM INSERT
     const [result] = await db.query("INSERT INTO job_posts SET ?", [payload]);
 
     return res.status(201).json({
@@ -246,9 +248,6 @@ if (req.body.salary_min || req.body.salary_max) {
     console.error("Create job error:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-  console.log("📥 Request body:", req.body);
-console.log("🗃️ Mapped payload:", payload);
-console.log("💾 Final payload before insert:", payload);
 };
 
 /* =========================
@@ -266,34 +265,26 @@ exports.updateJob = async (req, res) => {
     const existingCols = new Set(cols.map((r) => r.c));
 
     // gunakan nama kolom DB yang sebenarnya
-    const allowList = ["title", "description", "is_active", "verification_status", "company_id", "category_id", "location", "salary_min", "salary_max", "work_type", "work_time"];
+    const allowList = ["title", "description", "is_active", "verification_status", "company_id", "category_id", "location", "salary_min", "salary_max", "work_type", "work_time", "requirements", "salary_range"];
 
     // Terima alias dari FE dan normalisasi
-    const raw = { ...req.body };
+    const raw = mapJobPayloadToDb(req.body);
 
-    // job_title -> title
-    if (raw.job_title !== undefined && raw.title === undefined) {
-      raw.title = raw.job_title;
-      delete raw.job_title;
-    }
-    // job_description -> description
-    if (raw.job_description !== undefined && raw.description === undefined) {
-      raw.description = raw.job_description;
-      delete raw.job_description;
-    }
+    console.log("Mapped payload from FE to DB fields:", raw);
 
-    // Normalisasi work_type / work_time bila dikirim
-    if (raw.work_type !== undefined || raw.workType !== undefined) {
-      const wt = normalizeWorkType(raw.work_type ?? raw.workType);
-      if (!wt) return res.status(400).json({ success: false, message: WORK_TYPE_HINT });
-      raw.work_type = wt;
-      delete raw.workType;
-    }
-    if (raw.work_time !== undefined || raw.workTime !== undefined) {
-      const wtm = normalizeWorkTime(raw.work_time ?? raw.workTime);
-      if (!wtm) return res.status(400).json({ success: false, message: WORK_TIME_HINT });
-      raw.work_time = wtm;
-      delete raw.workTime;
+    // Normalisasi salary_range bila dikirim melalui salary_min atau salary_max
+    if (raw.salary_min !== undefined || raw.salary_max !== undefined) {
+      let salary_range = "";
+
+      if (raw.salary_min && raw.salary_max) {
+        salary_range = `${raw.salary_min} - ${raw.salary_max}`;
+      } else if (raw.salary_min) {
+        salary_range = `Min: ${raw.salary_min}`;
+      } else if (raw.salary_max) {
+        salary_range = `Max: ${raw.salary_max}`;
+      }
+
+      raw.salary_range = salary_range;
     }
 
     // Intersect: hanya field yang (diizinkan) & (ada di DB)
@@ -303,6 +294,10 @@ exports.updateJob = async (req, res) => {
         payload[k] = v;
       }
     }
+
+    // Pindahkan log di sini
+    console.log("ID:", id);
+    console.log("Payload to update:", payload);
 
     if (Object.keys(payload).length === 0) {
       return res.status(400).json({
